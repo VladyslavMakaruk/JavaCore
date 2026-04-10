@@ -2,6 +2,7 @@ package org.example.server;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import org.example.database.JSONDatabase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

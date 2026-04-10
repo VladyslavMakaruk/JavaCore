@@ -1,14 +1,14 @@
 package org.example.client;
 import com.beust.jcommander.JCommander;
+import org.example.connectionsStubs.SocketConnection;
+import org.example.connectionsStubs.client.ConnectionFactory;
+import org.example.connectionsStubs.Connection;
 import org.example.util.Args;
 import com.google.gson.Gson;
+import org.example.util.ReadFromFile;
 import org.example.util.inputValidation.ArgsValidator;
-import org.example.util.ReadArgsFromFile;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -17,11 +17,16 @@ public class Client {
     private final Gson jsonParser = new Gson();
     private final String serverIP;
     private final int serverPort;
-    private final String defaultDirectoryPath = System.getProperty("user.dir") + "/src/client/data/";
+    public static String defaultDirectoryPath = System.getProperty("user.dir") + "/src/client/data/";
+    private final String directoryPath;
+    private final ConnectionFactory conFactory;
 
-    Client(String[] inputArgs, String serverIP, int ServerPort) throws IOException {
+
+    Client(String[] inputArgs, String serverIP, int ServerPort,String directoryPath, ConnectionFactory conFactory) throws IOException {
         this.serverIP = serverIP;
         this.serverPort = ServerPort;
+        this.directoryPath = directoryPath;
+        this.conFactory = conFactory;
 
         JCommander.newBuilder()
                 .addObject(parsedArgs)
@@ -29,23 +34,22 @@ public class Client {
                 .parse(inputArgs);
 
         parsedArgs.transformCommandToLowerCase();
-        System.out.println(parsedArgs.getCommandKey());
-        createDirectory(defaultDirectoryPath);
+        createDirectory(directoryPath);
+    }
+
+    Client(String[] inputArgs, String serverIP, int ServerPort) throws IOException {
+        this(inputArgs,serverIP,ServerPort,defaultDirectoryPath, SocketConnection::new);
     }
 
     public void start(){
-        System.out.println("Client Started!");
-
         boolean argumentsIsValid = parseArgs();
-
         if (!argumentsIsValid){
             System.out.println("Wrong format of command arguments");
             return;
         }
 
-        try (Socket socket = new Socket(serverIP,serverPort)) {
-            handleRequest(new DataInputStream(socket.getInputStream()),
-                    new DataOutputStream(socket.getOutputStream()));
+        try (Connection connection = conFactory.create(serverIP,serverPort)) {
+            handleRequest(connection);
         } catch (IOException e) {
             System.out.println(e.getMessage());
         }
@@ -58,11 +62,11 @@ public class Client {
         }
     }
 
-    private void handleRequest(DataInputStream is, DataOutputStream os) throws IOException{
+    private void handleRequest(Connection connection) throws IOException{
         String request = argToJson(parsedArgs);
         System.out.println("Sent: " + request);
-        os.writeUTF(request);
-        String result = is.readUTF();
+        connection.send(request);
+        String result = connection.receive();
         System.out.println("Received: " + result);
     }
 
@@ -72,8 +76,7 @@ public class Client {
 
     private void parseArgsFromFile(String filename){
         try {
-            var argsReader = new ReadArgsFromFile(filename);
-            String jsonArguments = argsReader.argsInJsonFormat();
+            String jsonArguments = ReadFromFile.readString(directoryPath,filename);
             parsedArgs = jsonParser.fromJson(jsonArguments, Args.class);
         } catch (IOException e){
             System.out.println(e.getMessage());
@@ -84,7 +87,6 @@ public class Client {
         if (parsedArgs.getFileName() != null && !parsedArgs.getFileName().isEmpty()){
             parseArgsFromFile(parsedArgs.getFileName());
         }
-
         return ArgsValidator.validateArgs(parsedArgs);
     }
 

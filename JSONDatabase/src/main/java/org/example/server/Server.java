@@ -1,14 +1,15 @@
 package org.example.server;
 import com.google.gson.*;
+import org.example.connectionsStubs.Connection;
+import org.example.connectionsStubs.server.IServer;
+import org.example.connectionsStubs.server.IServerFactory;
+import org.example.database.JSONDatabase;
 import org.example.util.Args;
 import org.example.util.ArgsDeserializer;
 import org.example.util.ServerResponse;
 import org.example.util.inputValidation.*;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
+
 import java.io.IOException;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -26,24 +27,27 @@ public class Server {
     private boolean shutDownCondition = false;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     private final ReadWriteLock shutDownLock = new ReentrantReadWriteLock();
+    private final IServerFactory serverFactory;
 
     public Server(int port) throws IOException {
         this.database = new JSONDatabase();
         this.PORT = port;
+        this.serverFactory = IServerProd::new;
     }
 
-    Server(String filePath,String fileName, int port) throws IOException {
+    Server(String filePath, String fileName, int port, IServerFactory serverFactory) throws IOException {
         this.database = new JSONDatabase(filePath,fileName);
         this.PORT = port;
+        this.serverFactory = serverFactory;
     }
 
     public void Start(){
-        try(ServerSocket server = new ServerSocket(PORT)){
+        try(IServer server = serverFactory.create(PORT)){
             System.out.println("Server started!");
             while (!isShutDown()){
                 try {
                     server.setSoTimeout(500);
-                    Socket connection = server.accept();
+                    Connection connection = server.accept();
                     executor.submit(() -> {
                         try {
                             handleConnection(connection);
@@ -70,19 +74,16 @@ public class Server {
         }
     }
 
-    private void handleConnection(Socket connection) {
+    private void handleConnection(Connection connection) {
         try {
-            DataInputStream input = new DataInputStream(connection.getInputStream());
-            DataOutputStream output  = new DataOutputStream(connection.getOutputStream());
-            Args request = jsonParser.fromJson(input.readUTF(), Args.class);
+            Args request = jsonParser.fromJson(connection.receive(), Args.class);
             ServerResponse response;
             if(!ArgsValidator.validateArgs(request)){
-                output.writeUTF(ArgsValidator.invalidInput);
                 response = new ServerResponse(ServerResponse.invalidResponse,null,"invalid request");
-                output.writeUTF(ServerResponse.serverResponseToJson(response));
+                connection.send(ServerResponse.serverResponseToJson(response));
             } else {
                 response =  handleRequest(request);
-                output.writeUTF(ServerResponse.serverResponseToJson(response));
+                connection.send(ServerResponse.serverResponseToJson(response));
             }
         } catch (IOException e) {
             System.out.println("Error while handling request: " + e.getMessage());
@@ -93,7 +94,7 @@ public class Server {
     ServerResponse handleRequest(Args request){
         for (Command command : Command.values()) {
             Matcher matcher = command.getPattern().matcher(request.getCommandType().trim());
-            if (matcher.find()){
+            if (matcher.matches()){
                 switch (command) {
                     case GET-> {
                         return handleGet(request);
@@ -161,7 +162,7 @@ public class Server {
         }
     }
 
-    private boolean isShutDown(){
+    boolean isShutDown(){
         shutDownLock.readLock().lock();
         try {
             return shutDownCondition;

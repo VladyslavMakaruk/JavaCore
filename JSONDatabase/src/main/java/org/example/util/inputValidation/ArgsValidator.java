@@ -12,7 +12,7 @@ public class ArgsValidator {
         }
         for (Command command : Command.values()) {
             Matcher matcher = command.getPattern().matcher(argument.getCommandType().trim());
-            if (matcher.matches()){ // matches() -> find()
+            if (matcher.matches()){
                 switch (command) {
                     case GET, DELETE -> {
                         return isPersist(argument.getCommandKey());

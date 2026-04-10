@@ -1,4 +1,4 @@
-package org.example.server;
+package org.example.database;
 import com.google.gson.*;
 import java.io.*;
 import java.nio.file.*;
